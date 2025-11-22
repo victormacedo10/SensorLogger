@@ -1,0 +1,265 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="16dp"
+    tools:context=".MainActivity">
+
+    <Button
+        android:id="@+id/btnToggle"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"
+        android:layout_marginBottom="8dp"
+        android:backgroundTint="@color/navy_blue"
+        android:text="Start Collection"
+        android:textColor="@color/white" />
+
+    <!-- Legend -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center"
+        android:layout_marginBottom="16dp">
+
+        <View
+            android:layout_width="20dp"
+            android:layout_height="20dp"
+            android:background="#FF9800" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="LOW"
+            android:textSize="14sp"
+            android:layout_marginStart="4dp"
+            android:layout_marginEnd="16dp" />
+
+        <View
+            android:layout_width="20dp"
+            android:layout_height="20dp"
+            android:background="#4CAF50" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="MID"
+            android:textSize="14sp"
+            android:layout_marginStart="4dp"
+            android:layout_marginEnd="16dp" />
+
+        <View
+            android:layout_width="20dp"
+            android:layout_height="20dp"
+            android:background="#2196F3" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="HIGH"
+            android:textSize="14sp"
+            android:layout_marginStart="4dp" />
+
+    </LinearLayout>
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="match_parent">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical">
+
+            <!-- X Axis Charts -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="X Axis"
+                android:textSize="18sp"
+                android:textStyle="bold"
+                android:paddingTop="8dp"
+                android:paddingBottom="4dp" />
+
+            <TextView
+                android:id="@+id/tvXMean"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Mean: 0.0"
+                android:textSize="14sp" />
+
+            <com.github.mikephil.charting.charts.ScatterChart
+                android:id="@+id/chartXMean"
+                android:layout_width="match_parent"
+                android:layout_height="150dp" />
+
+            <TextView
+                android:id="@+id/tvXMin"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Min: 0.0"
+                android:textSize="14sp"
+                android:layout_marginTop="8dp" />
+
+            <com.github.mikephil.charting.charts.ScatterChart
+                android:id="@+id/chartXMin"
+                android:layout_width="match_parent"
+                android:layout_height="150dp" />
+
+            <TextView
+                android:id="@+id/tvXMax"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Max: 0.0"
+                android:textSize="14sp"
+                android:layout_marginTop="8dp" />
+
+            <com.github.mikephil.charting.charts.ScatterChart
+                android:id="@+id/chartXMax"
+                android:layout_width="match_parent"
+                android:layout_height="150dp" />
+
+            <TextView
+                android:id="@+id/tvXStd"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Std: 0.0"
+                android:textSize="14sp"
+                android:layout_marginTop="8dp" />
+
+            <com.github.mikephil.charting.charts.ScatterChart
+                android:id="@+id/chartXStd"
+                android:layout_width="match_parent"
+                android:layout_height="150dp" />
+
+            <!-- Y Axis Charts -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Y Axis"
+                android:textSize="18sp"
+                android:textStyle="bold"
+                android:paddingTop="16dp"
+                android:paddingBottom="4dp" />
+
+            <TextView
+                android:id="@+id/tvYMean"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Mean: 0.0"
+                android:textSize="14sp" />
+
+            <com.github.mikephil.charting.charts.ScatterChart
+                android:id="@+id/chartYMean"
+                android:layout_width="match_parent"
+                android:layout_height="150dp" />
+
+            <TextView
+                android:id="@+id/tvYMin"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Min: 0.0"
+                android:textSize="14sp"
+                android:layout_marginTop="8dp" />
+
+            <com.github.mikephil.charting.charts.ScatterChart
+                android:id="@+id/chartYMin"
+                android:layout_width="match_parent"
+                android:layout_height="150dp" />
+
+            <TextView
+                android:id="@+id/tvYMax"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Max: 0.0"
+                android:textSize="14sp"
+                android:layout_marginTop="8dp" />
+
+            <com.github.mikephil.charting.charts.ScatterChart
+                android:id="@+id/chartYMax"
+                android:layout_width="match_parent"
+                android:layout_height="150dp" />
+
+            <TextView
+                android:id="@+id/tvYStd"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Std: 0.0"
+                android:textSize="14sp"
+                android:layout_marginTop="8dp" />
+
+            <com.github.mikephil.charting.charts.ScatterChart
+                android:id="@+id/chartYStd"
+                android:layout_width="match_parent"
+                android:layout_height="150dp" />
+
+            <!-- Z Axis Charts -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Z Axis"
+                android:textSize="18sp"
+                android:textStyle="bold"
+                android:paddingTop="16dp"
+                android:paddingBottom="4dp" />
+
+            <TextView
+                android:id="@+id/tvZMean"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Mean: 0.0"
+                android:textSize="14sp" />
+
+            <com.github.mikephil.charting.charts.ScatterChart
+                android:id="@+id/chartZMean"
+                android:layout_width="match_parent"
+                android:layout_height="150dp" />
+
+            <TextView
+                android:id="@+id/tvZMin"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Min: 0.0"
+                android:textSize="14sp"
+                android:layout_marginTop="8dp" />
+
+            <com.github.mikephil.charting.charts.ScatterChart
+                android:id="@+id/chartZMin"
+                android:layout_width="match_parent"
+                android:layout_height="150dp" />
+
+            <TextView
+                android:id="@+id/tvZMax"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Max: 0.0"
+                android:textSize="14sp"
+                android:layout_marginTop="8dp" />
+
+            <com.github.mikephil.charting.charts.ScatterChart
+                android:id="@+id/chartZMax"
+                android:layout_width="match_parent"
+                android:layout_height="150dp" />
+
+            <TextView
+                android:id="@+id/tvZStd"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="Std: 0.0"
+                android:textSize="14sp"
+                android:layout_marginTop="8dp" />
+
+            <com.github.mikephil.charting.charts.ScatterChart
+                android:id="@+id/chartZStd"
+                android:layout_width="match_parent"
+                android:layout_height="150dp"
+                android:layout_marginBottom="16dp" />
+
+        </LinearLayout>
+    </ScrollView>
+
+</LinearLayout>
