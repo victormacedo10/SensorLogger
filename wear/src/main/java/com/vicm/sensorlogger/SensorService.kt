@@ -15,6 +15,7 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.google.android.gms.wearable.PutDataMapRequest
 import com.google.android.gms.wearable.Wearable
+import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -33,6 +34,12 @@ class SensorService : Service(), SensorEventListener {
     private val xValues = mutableListOf<Float>()
     private val yValues = mutableListOf<Float>()
     private val zValues = mutableListOf<Float>()
+
+    private var sensorFile: java.io.File? = null
+    private var metricsFile: java.io.File? = null
+    private var sensorWriter: java.io.FileWriter? = null
+    private var metricsWriter: java.io.FileWriter? = null
+    private val sensorDataBuffer = StringBuilder()
 
     private var isCollecting = false
 
@@ -61,6 +68,7 @@ class SensorService : Service(), SensorEventListener {
     private fun startCollection() {
         if (isCollecting) return
         isCollecting = true
+        createFiles()
         publishState(true)
         accelerometer?.let {
             sensorManager.registerListener(this, it, 10000) // 10000 microseconds = 100Hz
@@ -157,6 +165,23 @@ class SensorService : Service(), SensorEventListener {
         val putDataReq = putDataMapReq.asPutDataRequest()
         putDataReq.setUrgent()
         Wearable.getDataClient(this).putDataItem(putDataReq)
+
+        // Write to files
+        try {
+            val sensorDataToWrite: String
+            synchronized(this) {
+                sensorDataToWrite = sensorDataBuffer.toString()
+                sensorDataBuffer.setLength(0)
+            }
+            
+            sensorWriter?.append(sensorDataToWrite)
+            sensorWriter?.flush()
+
+            metricsWriter?.append("${System.currentTimeMillis()},$meanX,$meanY,$meanZ,$minX,$minY,$minZ,$maxX,$maxY,$maxZ,$stdX,$stdY,$stdZ\n")
+            metricsWriter?.flush()
+        } catch (e: Exception) {
+            Log.e("SensorService", "Error writing to file", e)
+        }
     }
     
     private fun getCategory(value: Float): Int {
@@ -189,6 +214,8 @@ class SensorService : Service(), SensorEventListener {
                     xValues.add(it.values[0])
                     yValues.add(it.values[1])
                     zValues.add(it.values[2])
+                    
+                    sensorDataBuffer.append("${System.currentTimeMillis()},${it.values[0]},${it.values[1]},${it.values[2]}\n")
                 }
             }
         }
@@ -204,6 +231,70 @@ class SensorService : Service(), SensorEventListener {
         publishState(false)
         sensorManager.unregisterListener(this)
         serviceJob.cancel()
+        
+        closeFiles()
+        sendFilesToPhone()
+    }
+
+    private fun createFiles() {
+        val timeStamp = java.text.SimpleDateFormat("yyyyMMdd_HHmmss", java.util.Locale.getDefault()).format(java.util.Date())
+        val fileNameSensor = "${timeStamp}_sensor.csv"
+        val fileNameMetrics = "${timeStamp}_metrics.csv"
+
+        // Use app-specific external storage to avoid permission issues on Wear OS
+        val root = getExternalFilesDir(null)
+        val dir = java.io.File(root, "Documents/SENSOR_LOGGER")
+        if (!dir.exists()) dir.mkdirs()
+
+        sensorFile = java.io.File(dir, fileNameSensor)
+        metricsFile = java.io.File(dir, fileNameMetrics)
+
+        try {
+            sensorWriter = java.io.FileWriter(sensorFile, true)
+            metricsWriter = java.io.FileWriter(metricsFile, true)
+
+            sensorWriter?.append("timestamp,acc_x,acc_y,acc_z\n")
+            metricsWriter?.append("timestamp,mean_x,mean_y,mean_z,min_x,min_y,min_z,max_x,max_y,max_z,std_x,std_y,std_z\n")
+        } catch (e: Exception) {
+            Log.e("SensorService", "Error creating files", e)
+        }
+    }
+
+    private fun closeFiles() {
+        try {
+            sensorWriter?.close()
+            metricsWriter?.close()
+        } catch (e: Exception) {
+            Log.e("SensorService", "Error closing files", e)
+        }
+    }
+
+    private fun sendFilesToPhone() {
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val nodes = Wearable.getNodeClient(this@SensorService).connectedNodes.await()
+                nodes.firstOrNull()?.let { node ->
+                    sensorFile?.let { file ->
+                        sendFile(node.id, file, "/sensor")
+                    }
+                    metricsFile?.let { file ->
+                        sendFile(node.id, file, "/metrics")
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("SensorService", "Error sending files", e)
+            }
+        }
+    }
+
+    private suspend fun sendFile(nodeId: String, file: java.io.File, pathPrefix: String) {
+        if (!file.exists()) return
+        val channelClient = Wearable.getChannelClient(this)
+        val fullPath = "$pathPrefix/${file.name}"
+        val channel = channelClient.openChannel(nodeId, fullPath).await()
+        channelClient.sendFile(channel, android.net.Uri.fromFile(file)).await()
+        channelClient.close(channel)
+        Log.d("SensorService", "Sent file: ${file.name} to $nodeId")
     }
 
     override fun onBind(intent: Intent?): IBinder? {

@@ -17,7 +17,11 @@ import com.google.android.gms.wearable.DataClient
 import com.google.android.gms.wearable.DataEvent
 import com.google.android.gms.wearable.DataEventBuffer
 import com.google.android.gms.wearable.DataMapItem
+import com.google.android.gms.wearable.ChannelClient
 import com.google.android.gms.wearable.Wearable
+import java.io.File
+import android.os.Environment
+import android.app.AlertDialog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -59,6 +63,17 @@ class MainActivity : AppCompatActivity(), DataClient.OnDataChangedListener {
     
     private var timeIndex = 0f
     private var isCollecting = false
+
+    private val channelCallback = object : ChannelClient.ChannelCallback() {
+        override fun onChannelOpened(channel: ChannelClient.Channel) {
+            super.onChannelOpened(channel)
+            val path = channel.path
+            if (path.startsWith("/sensor/") || path.startsWith("/metrics/")) {
+                val fileName = path.substringAfterLast("/")
+                receiveFile(channel, fileName)
+            }
+        }
+    }
     
     // Store entries for each chart
     private val chartEntries = mutableMapOf<ScatterChart, ArrayList<Pair<Entry, Int>>>()
@@ -167,11 +182,13 @@ class MainActivity : AppCompatActivity(), DataClient.OnDataChangedListener {
     override fun onResume() {
         super.onResume()
         Wearable.getDataClient(this).addListener(this)
+        Wearable.getChannelClient(this).registerChannelCallback(channelCallback)
     }
 
     override fun onPause() {
         super.onPause()
         Wearable.getDataClient(this).removeListener(this)
+        Wearable.getChannelClient(this).unregisterChannelCallback(channelCallback)
     }
 
     override fun onDataChanged(dataEvents: DataEventBuffer) {
@@ -410,5 +427,33 @@ class MainActivity : AppCompatActivity(), DataClient.OnDataChangedListener {
         }
         
         return if (count > 0) sum / count else 0f
+    }
+
+    private fun receiveFile(channel: ChannelClient.Channel, fileName: String) {
+        // Use app-specific external storage which is accessible via USB
+        // Path: Android/data/com.vicm.sensorlogger/files/Documents/SENSOR_LOGGER
+        val root = getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS)
+        val dir = File(root, "SENSOR_LOGGER")
+        if (!dir.exists()) dir.mkdirs()
+        
+        val file = File(dir, fileName)
+        
+        Wearable.getChannelClient(this).receiveFile(channel, android.net.Uri.fromFile(file), false)
+            .addOnSuccessListener {
+                runOnUiThread {
+                    showFileSavedAlert(fileName)
+                }
+            }
+            .addOnFailureListener { e ->
+                Log.e("MainActivity", "Failed to receive file", e)
+            }
+    }
+
+    private fun showFileSavedAlert(fileName: String) {
+        AlertDialog.Builder(this)
+            .setTitle("File Saved")
+            .setMessage("File saved to Documents/SENSOR_LOGGER:\n$fileName")
+            .setPositiveButton("OK", null)
+            .show()
     }
 }
