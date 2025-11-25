@@ -55,36 +55,13 @@ class MainActivity : AppCompatActivity(), DataClient.OnDataChangedListener {
     
     private lateinit var btnToggle: Button
 
-    // Data entries for each metric
-    private val xMeanEntries = ArrayList<Entry>()
-    private val xMinEntries = ArrayList<Entry>()
-    private val xMaxEntries = ArrayList<Entry>()
-    private val xStdEntries = ArrayList<Entry>()
-    private val yMeanEntries = ArrayList<Entry>()
-    private val yMinEntries = ArrayList<Entry>()
-    private val yMaxEntries = ArrayList<Entry>()
-    private val yStdEntries = ArrayList<Entry>()
-    private val zMeanEntries = ArrayList<Entry>()
-    private val zMinEntries = ArrayList<Entry>()
-    private val zMaxEntries = ArrayList<Entry>()
-    private val zStdEntries = ArrayList<Entry>()
-    
-    // Category lists for each metric (to track colors)
-    private val xMeanCategories = ArrayList<Int>()
-    private val xMinCategories = ArrayList<Int>()
-    private val xMaxCategories = ArrayList<Int>()
-    private val xStdCategories = ArrayList<Int>()
-    private val yMeanCategories = ArrayList<Int>()
-    private val yMinCategories = ArrayList<Int>()
-    private val yMaxCategories = ArrayList<Int>()
-    private val yStdCategories = ArrayList<Int>()
-    private val zMeanCategories = ArrayList<Int>()
-    private val zMinCategories = ArrayList<Int>()
-    private val zMaxCategories = ArrayList<Int>()
-    private val zStdCategories = ArrayList<Int>()
+
     
     private var timeIndex = 0f
     private var isCollecting = false
+    
+    // Store entries for each chart
+    private val chartEntries = mutableMapOf<ScatterChart, ArrayList<Pair<Entry, Int>>>()
     
     // Color mapping for categories
     private val colorLow = Color.rgb(255, 152, 0)   // Orange
@@ -244,9 +221,14 @@ class MainActivity : AppCompatActivity(), DataClient.OnDataChangedListener {
                     isCollecting = dataMap.getBoolean("is_collecting")
                     runOnUiThread {
                         updateButtonState()
-                        // If we just stopped collecting, reset x-axis to show full range
-                        if (wasCollecting && !isCollecting) {
+                        // If we just started collecting, clear everything
+                        if (!wasCollecting && isCollecting) {
+                            resetCharts()
+                        }
+                        // If we just stopped collecting, reset x-axis to show full range and show means
+                        else if (wasCollecting && !isCollecting) {
                             fitAllCharts()
+                            showSessionMeans()
                         }
                     }
                 }
@@ -296,50 +278,56 @@ class MainActivity : AppCompatActivity(), DataClient.OnDataChangedListener {
             tvZMax.text = "Max: $zMax"
             tvZStd.text = "Std: $zStd"
 
-            // Update Charts with categories for color coding
-            addEntry(chartXMean, xMeanEntries, xMean, xMeanCategories, catXMean)
-            addEntry(chartXMin, xMinEntries, xMin, xMinCategories, catXMin)
-            addEntry(chartXMax, xMaxEntries, xMax, xMaxCategories, catXMax)
-            addEntry(chartXStd, xStdEntries, xStd, xStdCategories, catXStd)
+            // Update Charts with categories from Wear
+            addEntry(chartXMean, xMean, catXMean)
+            addEntry(chartXMin, xMin, catXMin)
+            addEntry(chartXMax, xMax, catXMax)
+            addEntry(chartXStd, xStd, catXStd)
             
-            addEntry(chartYMean, yMeanEntries, yMean, yMeanCategories, catYMean)
-            addEntry(chartYMin, yMinEntries, yMin, yMinCategories, catYMin)
-            addEntry(chartYMax, yMaxEntries, yMax, yMaxCategories, catYMax)
-            addEntry(chartYStd, yStdEntries, yStd, yStdCategories, catYStd)
+            addEntry(chartYMean, yMean, catYMean)
+            addEntry(chartYMin, yMin, catYMin)
+            addEntry(chartYMax, yMax, catYMax)
+            addEntry(chartYStd, yStd, catYStd)
             
-            addEntry(chartZMean, zMeanEntries, zMean, zMeanCategories, catZMean)
-            addEntry(chartZMin, zMinEntries, zMin, zMinCategories, catZMin)
-            addEntry(chartZMax, zMaxEntries, zMax, zMaxCategories, catZMax)
-            addEntry(chartZStd, zStdEntries, zStd, zStdCategories, catZStd)
+            addEntry(chartZMean, zMean, catZMean)
+            addEntry(chartZMin, zMin, catZMin)
+            addEntry(chartZMax, zMax, catZMax)
+            addEntry(chartZStd, zStd, catZStd)
 
             timeIndex += 1f
         }
     }
 
-    private fun addEntry(chart: ScatterChart, entries: ArrayList<Entry>, value: Float, categories: ArrayList<Int>, category: Int) {
-        entries.add(Entry(timeIndex, value))
-        categories.add(category)
+    private fun addEntry(chart: ScatterChart, value: Float, category: Int) {
+        // Get or create entry list for this chart
+        val entries = chartEntries.getOrPut(chart) { ArrayList() }
         
-        // Build color array based on categories
-        val colors = ArrayList<Int>()
-        for (cat in categories) {
-            colors.add(when (cat) {
-                0 -> colorLow    // Orange
-                2 -> colorHigh   // Blue
-                else -> colorMid // Green (1)
-            })
+        // Add new entry with its category
+        entries.add(Pair(Entry(timeIndex, value), category))
+        
+        // Split entries into three lists based on category
+        val lowEntries = ArrayList<Entry>()
+        val midEntries = ArrayList<Entry>()
+        val highEntries = ArrayList<Entry>()
+        
+        for ((entry, cat) in entries) {
+            when (cat) {
+                0 -> lowEntries.add(entry)
+                2 -> highEntries.add(entry)
+                else -> midEntries.add(entry)
+            }
         }
         
-        val dataSet = ScatterDataSet(entries, "Data")
-        dataSet.setScatterShape(ScatterChart.ScatterShape.CIRCLE)
-        dataSet.scatterShapeSize = 8f
-        dataSet.colors = colors  // Set per-point colors
-        dataSet.setDrawValues(false) // Remove text labels on data points
+        // Create datasets for each category
+        val dataSetLow = createDataSet(lowEntries, "Low", colorLow)
+        val dataSetMid = createDataSet(midEntries, "Mid", colorMid)
+        val dataSetHigh = createDataSet(highEntries, "High", colorHigh)
         
-        val scatterData = ScatterData(dataSet)
+        // Combine into ScatterData
+        val scatterData = ScatterData(dataSetLow, dataSetMid, dataSetHigh)
         chart.data = scatterData
         
-        // If collecting, show only last 20 seconds (20 data points)
+        // If collecting, show only last 20 seconds
         if (isCollecting && entries.size > 20) {
             chart.setVisibleXRangeMaximum(20f)
             chart.moveViewToX(timeIndex)
@@ -347,5 +335,80 @@ class MainActivity : AppCompatActivity(), DataClient.OnDataChangedListener {
         
         chart.notifyDataSetChanged()
         chart.invalidate()
+    }
+
+    private fun createDataSet(entries: ArrayList<Entry>, label: String, color: Int): ScatterDataSet {
+        val dataSet = ScatterDataSet(entries, label)
+        dataSet.setScatterShape(ScatterChart.ScatterShape.CIRCLE)
+        dataSet.scatterShapeSize = 8f
+        dataSet.setDrawValues(false)
+        dataSet.color = color
+        return dataSet
+    }
+
+    private fun getValueCategory(value: Float): Int {
+        return when {
+            value < -4f -> 0  // LOW
+            value > 4f -> 2   // HIGH
+            else -> 1         // MID
+        }
+    }
+
+    private fun getCategoryColor(category: Int): Int {
+        return when (category) {
+            0 -> colorLow    // Orange for LOW (< -4)
+            2 -> colorHigh   // Blue for HIGH (> 4)
+            else -> colorMid // Green for MID (-4 to 4)
+        }
+    }
+
+    private fun resetCharts() {
+        timeIndex = 0f
+        chartEntries.clear()
+        
+        val charts = listOf(
+            chartXMean, chartXMin, chartXMax, chartXStd,
+            chartYMean, chartYMin, chartYMax, chartYStd,
+            chartZMean, chartZMin, chartZMax, chartZStd
+        )
+        
+        for (chart in charts) {
+            chart.clear()
+        }
+    }
+
+    private fun showSessionMeans() {
+        tvXMean.text = "Avg Mean: %.2f".format(calculateChartMean(chartXMean))
+        tvXMin.text = "Avg Min: %.2f".format(calculateChartMean(chartXMin))
+        tvXMax.text = "Avg Max: %.2f".format(calculateChartMean(chartXMax))
+        tvXStd.text = "Avg Std: %.2f".format(calculateChartMean(chartXStd))
+        
+        tvYMean.text = "Avg Mean: %.2f".format(calculateChartMean(chartYMean))
+        tvYMin.text = "Avg Min: %.2f".format(calculateChartMean(chartYMin))
+        tvYMax.text = "Avg Max: %.2f".format(calculateChartMean(chartYMax))
+        tvYStd.text = "Avg Std: %.2f".format(calculateChartMean(chartYStd))
+        
+        tvZMean.text = "Avg Mean: %.2f".format(calculateChartMean(chartZMean))
+        tvZMin.text = "Avg Min: %.2f".format(calculateChartMean(chartZMin))
+        tvZMax.text = "Avg Max: %.2f".format(calculateChartMean(chartZMax))
+        tvZStd.text = "Avg Std: %.2f".format(calculateChartMean(chartZStd))
+    }
+
+    private fun calculateChartMean(chart: ScatterChart): Float {
+        val data = chart.data ?: return 0f
+        if (data.dataSetCount == 0) return 0f
+        
+        var sum = 0f
+        var count = 0
+        
+        for (i in 0 until data.dataSetCount) {
+            val dataSet = data.getDataSetByIndex(i)
+            for (j in 0 until dataSet.entryCount) {
+                sum += dataSet.getEntryForIndex(j).y
+                count++
+            }
+        }
+        
+        return if (count > 0) sum / count else 0f
     }
 }
