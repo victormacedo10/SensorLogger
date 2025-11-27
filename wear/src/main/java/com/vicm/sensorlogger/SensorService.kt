@@ -100,21 +100,42 @@ class SensorService : Service(), SensorEventListener {
         }
 
         // Compute statistics for each axis
-        val meanX = xCopy.average().toFloat()
-        val meanY = yCopy.average().toFloat()
-        val meanZ = zCopy.average().toFloat()
+        val rawMeanX = xCopy.average().toFloat()
+        val rawMeanY = yCopy.average().toFloat()
+        val rawMeanZ = zCopy.average().toFloat()
         
-        val minX = xCopy.minOrNull() ?: 0f
-        val minY = yCopy.minOrNull() ?: 0f
-        val minZ = zCopy.minOrNull() ?: 0f
+        val rawMinX = xCopy.minOrNull() ?: 0f
+        val rawMinY = yCopy.minOrNull() ?: 0f
+        val rawMinZ = zCopy.minOrNull() ?: 0f
         
-        val maxX = xCopy.maxOrNull() ?: 0f
-        val maxY = yCopy.maxOrNull() ?: 0f
-        val maxZ = zCopy.maxOrNull() ?: 0f
+        val rawMaxX = xCopy.maxOrNull() ?: 0f
+        val rawMaxY = yCopy.maxOrNull() ?: 0f
+        val rawMaxZ = zCopy.maxOrNull() ?: 0f
         
-        val stdX = calculateStd(xCopy, meanX)
-        val stdY = calculateStd(yCopy, meanY)
-        val stdZ = calculateStd(zCopy, meanZ)
+        val rawStdX = calculateStd(xCopy, rawMeanX)
+        val rawStdY = calculateStd(yCopy, rawMeanY)
+        val rawStdZ = calculateStd(zCopy, rawMeanZ)
+
+        // Apply Height/Weight adjustment
+        val height = SettingsManager.getHeight(this)
+        val weight = SettingsManager.getWeight(this)
+        val factor = if (weight != 0f) height / weight else 1f
+
+        val meanX = rawMeanX * factor
+        val meanY = rawMeanY * factor
+        val meanZ = rawMeanZ * factor
+        
+        val minX = rawMinX * factor
+        val minY = rawMinY * factor
+        val minZ = rawMinZ * factor
+        
+        val maxX = rawMaxX * factor
+        val maxY = rawMaxY * factor
+        val maxZ = rawMaxZ * factor
+        
+        val stdX = rawStdX * factor
+        val stdY = rawStdY * factor
+        val stdZ = rawStdZ * factor
 
         // Compute categories for each metric (0: LOW < -4, 1: MID, 2: HIGH > 4)
         val catMeanX = getCategory(meanX)

@@ -8,12 +8,18 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -22,6 +28,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.material.Button
 import androidx.wear.compose.material.ButtonDefaults
+import androidx.wear.compose.material.Icon
 import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.Text
 import androidx.wear.compose.material.TimeText
@@ -90,8 +97,12 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
     }
 }
 
+enum class Screen { Main, Settings }
+
 @Composable
 fun WearApp(isRunning: Boolean, onToggle: () -> Unit) {
+    var currentScreen by remember { mutableStateOf(Screen.Main) }
+
     SensorLoggerTheme {
         Box(
             modifier = Modifier
@@ -100,13 +111,23 @@ fun WearApp(isRunning: Boolean, onToggle: () -> Unit) {
             contentAlignment = Alignment.Center
         ) {
             TimeText()
-            MainScreen(isRunning, onToggle)
+            
+            when (currentScreen) {
+                Screen.Main -> MainScreen(
+                    isRunning = isRunning, 
+                    onToggle = onToggle,
+                    onSettingsClick = { currentScreen = Screen.Settings }
+                )
+                Screen.Settings -> SettingsScreen(
+                    onBack = { currentScreen = Screen.Main }
+                )
+            }
         }
     }
 }
 
 @Composable
-fun MainScreen(isRunning: Boolean, onToggle: () -> Unit) {
+fun MainScreen(isRunning: Boolean, onToggle: () -> Unit, onSettingsClick: () -> Unit) {
     Column(
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.Center,
@@ -115,9 +136,22 @@ fun MainScreen(isRunning: Boolean, onToggle: () -> Unit) {
         Text(
             text = if (isRunning) "Collecting Data..." else "Ready",
             textAlign = TextAlign.Center,
-            modifier = Modifier.padding(bottom = 16.dp),
+            modifier = Modifier.padding(bottom = 8.dp),
             color = MaterialTheme.colors.onBackground
         )
+
+        if (!isRunning) {
+            Button(
+                onClick = onSettingsClick,
+                modifier = Modifier
+                    .size(40.dp)
+                    .padding(bottom = 8.dp),
+                colors = ButtonDefaults.secondaryButtonColors()
+            ) {
+                Icon(imageVector = Icons.Filled.Settings, contentDescription = "Settings")
+            }
+            Spacer(modifier = Modifier.height(4.dp))
+        }
 
         Button(
             onClick = onToggle,
