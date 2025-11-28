@@ -63,6 +63,7 @@ class MainActivity : AppCompatActivity(), DataClient.OnDataChangedListener {
     
     private var timeIndex = 0f
     private var isCollecting = false
+    private var lastProcessedTimestamp: Long = 0
 
     private val channelCallback = object : ChannelClient.ChannelCallback() {
         override fun onChannelOpened(channel: ChannelClient.Channel) {
@@ -137,6 +138,8 @@ class MainActivity : AppCompatActivity(), DataClient.OnDataChangedListener {
             } else {
                 sendCommand("/start_collection")
             }
+            // Do NOT toggle isCollecting here. Wait for confirmation from Wear.
+            btnToggle.isEnabled = false // Disable button to prevent double clicks
         }
         
         updateButtonState()
@@ -197,50 +200,64 @@ class MainActivity : AppCompatActivity(), DataClient.OnDataChangedListener {
                 val path = event.dataItem.uri.path
                 if (path == "/sensor_data") {
                     val dataMap = DataMapItem.fromDataItem(event.dataItem).dataMap
-                    val xMean = dataMap.getFloat("mean_x")
-                    val yMean = dataMap.getFloat("mean_y")
-                    val zMean = dataMap.getFloat("mean_z")
-                    val xMin = dataMap.getFloat("min_x")
-                    val yMin = dataMap.getFloat("min_y")
-                    val zMin = dataMap.getFloat("min_z")
-                    val xMax = dataMap.getFloat("max_x")
-                    val yMax = dataMap.getFloat("max_y")
-                    val zMax = dataMap.getFloat("max_z")
-                    val xStd = dataMap.getFloat("std_x")
-                    val yStd = dataMap.getFloat("std_y")
-                    val zStd = dataMap.getFloat("std_z")
+                    val bufferedData = dataMap.getDataMapArrayList("buffered_data") ?: ArrayList()
                     
-                    // Get categories
-                    val catXMean = dataMap.getInt("cat_mean_x")
-                    val catYMean = dataMap.getInt("cat_mean_y")
-                    val catZMean = dataMap.getInt("cat_mean_z")
-                    val catXMin = dataMap.getInt("cat_min_x")
-                    val catYMin = dataMap.getInt("cat_min_y")
-                    val catZMin = dataMap.getInt("cat_min_z")
-                    val catXMax = dataMap.getInt("cat_max_x")
-                    val catYMax = dataMap.getInt("cat_max_y")
-                    val catZMax = dataMap.getInt("cat_max_z")
-                    val catXStd = dataMap.getInt("cat_std_x")
-                    val catYStd = dataMap.getInt("cat_std_y")
-                    val catZStd = dataMap.getInt("cat_std_z")
+                    // Sort by timestamp to ensure order
+                    bufferedData.sortBy { it.getLong("timestamp") }
                     
-                    updateCharts(
-                        xMean, xMin, xMax, xStd,
-                        yMean, yMin, yMax, yStd,
-                        zMean, zMin, zMax, zStd,
-                        catXMean, catXMin, catXMax, catXStd,
-                        catYMean, catYMin, catYMax, catYStd,
-                        catZMean, catZMin, catZMax, catZStd
-                    )
+                    for (item in bufferedData) {
+                        val timestamp = item.getLong("timestamp")
+                        if (timestamp > lastProcessedTimestamp) {
+                            lastProcessedTimestamp = timestamp
+                            
+                            val xMean = item.getFloat("mean_x")
+                            val yMean = item.getFloat("mean_y")
+                            val zMean = item.getFloat("mean_z")
+                            val xMin = item.getFloat("min_x")
+                            val yMin = item.getFloat("min_y")
+                            val zMin = item.getFloat("min_z")
+                            val xMax = item.getFloat("max_x")
+                            val yMax = item.getFloat("max_y")
+                            val zMax = item.getFloat("max_z")
+                            val xStd = item.getFloat("std_x")
+                            val yStd = item.getFloat("std_y")
+                            val zStd = item.getFloat("std_z")
+                            
+                            // Get categories
+                            val catXMean = item.getInt("cat_mean_x")
+                            val catYMean = item.getInt("cat_mean_y")
+                            val catZMean = item.getInt("cat_mean_z")
+                            val catXMin = item.getInt("cat_min_x")
+                            val catYMin = item.getInt("cat_min_y")
+                            val catZMin = item.getInt("cat_min_z")
+                            val catXMax = item.getInt("cat_max_x")
+                            val catYMax = item.getInt("cat_max_y")
+                            val catZMax = item.getInt("cat_max_z")
+                            val catXStd = item.getInt("cat_std_x")
+                            val catYStd = item.getInt("cat_std_y")
+                            val catZStd = item.getInt("cat_std_z")
+                            
+                            updateCharts(
+                                xMean, xMin, xMax, xStd,
+                                yMean, yMin, yMax, yStd,
+                                zMean, zMin, zMax, zStd,
+                                catXMean, catXMin, catXMax, catXStd,
+                                catYMean, catYMin, catYMax, catYStd,
+                                catZMean, catZMin, catZMax, catZStd
+                            )
+                        }
+                    }
                 } else if (path == "/collection_state") {
                     val dataMap = DataMapItem.fromDataItem(event.dataItem).dataMap
                     val wasCollecting = isCollecting
                     isCollecting = dataMap.getBoolean("is_collecting")
                     runOnUiThread {
+                        btnToggle.isEnabled = true // Re-enable button
                         updateButtonState()
                         // If we just started collecting, clear everything
                         if (!wasCollecting && isCollecting) {
                             resetCharts()
+                            lastProcessedTimestamp = 0 // Reset timestamp tracker
                         }
                         // If we just stopped collecting, reset x-axis to show full range and show means
                         else if (wasCollecting && !isCollecting) {

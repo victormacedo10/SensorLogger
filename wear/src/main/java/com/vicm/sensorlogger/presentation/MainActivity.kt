@@ -8,18 +8,12 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -28,7 +22,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.material.Button
 import androidx.wear.compose.material.ButtonDefaults
-import androidx.wear.compose.material.Icon
 import androidx.wear.compose.material.MaterialTheme
 import androidx.wear.compose.material.Text
 import androidx.wear.compose.material.TimeText
@@ -39,6 +32,16 @@ import com.google.android.gms.wearable.DataMapItem
 import com.google.android.gms.wearable.Wearable
 import com.vicm.sensorlogger.SensorService
 import com.vicm.sensorlogger.presentation.theme.SensorLoggerTheme
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.wear.compose.material.Icon
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
 
@@ -46,6 +49,10 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        
+        // Load user metrics on startup
+        SensorService.loadUserMetrics(this)
+        
         setContent {
             WearApp(isRunning) {
                 toggleService()
@@ -92,16 +99,16 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
         } else {
             startForegroundService(intent)
         }
-        // Optimistic update, though listener will confirm
-        // isRunning = !isRunning 
+        isRunning = !isRunning 
     }
 }
 
-enum class Screen { Main, Settings }
-
 @Composable
-fun WearApp(isRunning: Boolean, onToggle: () -> Unit) {
-    var currentScreen by remember { mutableStateOf(Screen.Main) }
+fun WearApp(
+    isRunning: Boolean, 
+    onToggle: () -> Unit
+) {
+    var showSettings by remember { mutableStateOf(false) }
 
     SensorLoggerTheme {
         Box(
@@ -112,14 +119,15 @@ fun WearApp(isRunning: Boolean, onToggle: () -> Unit) {
         ) {
             TimeText()
             
-            when (currentScreen) {
-                Screen.Main -> MainScreen(
+            if (showSettings) {
+                SettingsScreen(
+                    onBack = { showSettings = false }
+                )
+            } else {
+                MainScreen(
                     isRunning = isRunning, 
                     onToggle = onToggle,
-                    onSettingsClick = { currentScreen = Screen.Settings }
-                )
-                Screen.Settings -> SettingsScreen(
-                    onBack = { currentScreen = Screen.Main }
+                    onSettingsClick = { showSettings = true }
                 )
             }
         }
@@ -127,41 +135,47 @@ fun WearApp(isRunning: Boolean, onToggle: () -> Unit) {
 }
 
 @Composable
-fun MainScreen(isRunning: Boolean, onToggle: () -> Unit, onSettingsClick: () -> Unit) {
+fun MainScreen(
+    isRunning: Boolean, 
+    onToggle: () -> Unit,
+    onSettingsClick: () -> Unit
+) {
     Column(
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text(
-            text = if (isRunning) "Collecting Data..." else "Ready",
-            textAlign = TextAlign.Center,
-            modifier = Modifier.padding(bottom = 8.dp),
-            color = MaterialTheme.colors.onBackground
-        )
-
-        if (!isRunning) {
-            Button(
-                onClick = onSettingsClick,
-                modifier = Modifier
-                    .size(40.dp)
-                    .padding(bottom = 8.dp),
-                colors = ButtonDefaults.secondaryButtonColors()
-            ) {
-                Icon(imageVector = Icons.Filled.Settings, contentDescription = "Settings")
-            }
-            Spacer(modifier = Modifier.height(4.dp))
+        Button(
+            onClick = onSettingsClick,
+            colors = ButtonDefaults.secondaryButtonColors(),
+            modifier = Modifier.size(ButtonDefaults.SmallButtonSize)
+        ) {
+            Icon(
+                imageVector = Icons.Default.Settings,
+                contentDescription = "Settings"
+            )
         }
+        
+        Spacer(modifier = Modifier.height(16.dp))
 
         Button(
             onClick = onToggle,
-            modifier = Modifier.fillMaxWidth(0.8f),
+            modifier = Modifier.fillMaxWidth(0.75f),
             colors = ButtonDefaults.primaryButtonColors(
-                backgroundColor = MaterialTheme.colors.primary,
+                backgroundColor = if (isRunning) MaterialTheme.colors.error else MaterialTheme.colors.primary,
                 contentColor = MaterialTheme.colors.onPrimary
             )
         ) {
             Text(text = if (isRunning) "Stop" else "Start")
         }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Text(
+            text = if (isRunning) "Collecting..." else "Ready",
+            textAlign = TextAlign.Center,
+            color = MaterialTheme.colors.onBackground,
+            style = MaterialTheme.typography.body1
+        )
     }
 }

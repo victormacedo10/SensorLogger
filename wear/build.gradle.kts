@@ -53,4 +53,7 @@ dependencies {
   debugImplementation(libs.androidx.ui.tooling)
   debugImplementation(libs.androidx.ui.test.manifest)
   implementation(libs.kotlinx.coroutines.play.services)
+  implementation(libs.androidx.compose.material.icons.core)
+  implementation(libs.androidx.compose.material.standard)
+  implementation(libs.androidx.wear.input)
 }

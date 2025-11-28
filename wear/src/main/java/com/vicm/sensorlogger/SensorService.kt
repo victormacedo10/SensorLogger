@@ -11,8 +11,10 @@ import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.os.IBinder
+import android.os.PowerManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
+import com.google.android.gms.wearable.DataMap
 import com.google.android.gms.wearable.PutDataMapRequest
 import com.google.android.gms.wearable.Wearable
 import kotlinx.coroutines.tasks.await
@@ -22,11 +24,13 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 
 class SensorService : Service(), SensorEventListener {
 
     private lateinit var sensorManager: SensorManager
     private var accelerometer: Sensor? = null
+    private var wakeLock: PowerManager.WakeLock? = null
 
     private val serviceJob = Job()
     private val serviceScope = CoroutineScope(Dispatchers.IO + serviceJob)
@@ -40,6 +44,10 @@ class SensorService : Service(), SensorEventListener {
     private var sensorWriter: java.io.FileWriter? = null
     private var metricsWriter: java.io.FileWriter? = null
     private val sensorDataBuffer = StringBuilder()
+    
+    // Buffer for data transmission (max 60 seconds)
+    private val transmissionBuffer = java.util.LinkedList<DataMap>()
+    private val MAX_BUFFER_SIZE = 60
 
     private var isCollecting = false
 
@@ -48,7 +56,13 @@ class SensorService : Service(), SensorEventListener {
         sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
         accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
 
+        // Acquire WakeLock
+        val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+        wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "SensorLogger::WakeLock")
+        wakeLock?.acquire()
+
         startForeground(1, createNotification())
+        loadUserMetrics(this)
         startCollection()
     }
 
@@ -70,6 +84,10 @@ class SensorService : Service(), SensorEventListener {
         isCollecting = true
         createFiles()
         publishState(true)
+
+        val currentHeight = (userHeight * 10f).roundToInt() / 10f
+        val currentWeight = (userWeight * 10f).roundToInt() / 10f
+
         accelerometer?.let {
             sensorManager.registerListener(this, it, 10000) // 10000 microseconds = 100Hz
         }
@@ -100,42 +118,21 @@ class SensorService : Service(), SensorEventListener {
         }
 
         // Compute statistics for each axis
-        val rawMeanX = xCopy.average().toFloat()
-        val rawMeanY = yCopy.average().toFloat()
-        val rawMeanZ = zCopy.average().toFloat()
+        val meanX = xCopy.average().toFloat()
+        val meanY = yCopy.average().toFloat()
+        val meanZ = zCopy.average().toFloat()
         
-        val rawMinX = xCopy.minOrNull() ?: 0f
-        val rawMinY = yCopy.minOrNull() ?: 0f
-        val rawMinZ = zCopy.minOrNull() ?: 0f
+        val minX = xCopy.minOrNull() ?: 0f
+        val minY = yCopy.minOrNull() ?: 0f
+        val minZ = zCopy.minOrNull() ?: 0f
         
-        val rawMaxX = xCopy.maxOrNull() ?: 0f
-        val rawMaxY = yCopy.maxOrNull() ?: 0f
-        val rawMaxZ = zCopy.maxOrNull() ?: 0f
+        val maxX = xCopy.maxOrNull() ?: 0f
+        val maxY = yCopy.maxOrNull() ?: 0f
+        val maxZ = zCopy.maxOrNull() ?: 0f
         
-        val rawStdX = calculateStd(xCopy, rawMeanX)
-        val rawStdY = calculateStd(yCopy, rawMeanY)
-        val rawStdZ = calculateStd(zCopy, rawMeanZ)
-
-        // Apply Height/Weight adjustment
-        val height = SettingsManager.getHeight(this)
-        val weight = SettingsManager.getWeight(this)
-        val factor = if (weight != 0f) height / weight else 1f
-
-        val meanX = rawMeanX * factor
-        val meanY = rawMeanY * factor
-        val meanZ = rawMeanZ * factor
-        
-        val minX = rawMinX * factor
-        val minY = rawMinY * factor
-        val minZ = rawMinZ * factor
-        
-        val maxX = rawMaxX * factor
-        val maxY = rawMaxY * factor
-        val maxZ = rawMaxZ * factor
-        
-        val stdX = rawStdX * factor
-        val stdY = rawStdY * factor
-        val stdZ = rawStdZ * factor
+        val stdX = calculateStd(xCopy, meanX)
+        val stdY = calculateStd(yCopy, meanY)
+        val stdZ = calculateStd(zCopy, meanZ)
 
         // Compute categories for each metric (0: LOW < -4, 1: MID, 2: HIGH > 4)
         val catMeanX = getCategory(meanX)
@@ -153,35 +150,47 @@ class SensorService : Service(), SensorEventListener {
 
         Log.d("SensorService", "Sending data - X: mean=$meanX, min=$minX, max=$maxX, std=$stdX")
 
+        // Create DataMap for this second
+        val dataMap = DataMap()
+        dataMap.putFloat("mean_x", meanX)
+        dataMap.putFloat("mean_y", meanY)
+        dataMap.putFloat("mean_z", meanZ)
+        dataMap.putFloat("min_x", minX)
+        dataMap.putFloat("min_y", minY)
+        dataMap.putFloat("min_z", minZ)
+        dataMap.putFloat("max_x", maxX)
+        dataMap.putFloat("max_y", maxY)
+        dataMap.putFloat("max_z", maxZ)
+        dataMap.putFloat("std_x", stdX)
+        dataMap.putFloat("std_y", stdY)
+        dataMap.putFloat("std_z", stdZ)
+        
+        // Add categories
+        dataMap.putInt("cat_mean_x", catMeanX)
+        dataMap.putInt("cat_mean_y", catMeanY)
+        dataMap.putInt("cat_mean_z", catMeanZ)
+        dataMap.putInt("cat_min_x", catMinX)
+        dataMap.putInt("cat_min_y", catMinY)
+        dataMap.putInt("cat_min_z", catMinZ)
+        dataMap.putInt("cat_max_x", catMaxX)
+        dataMap.putInt("cat_max_y", catMaxY)
+        dataMap.putInt("cat_max_z", catMaxZ)
+        dataMap.putInt("cat_std_x", catStdX)
+        dataMap.putInt("cat_std_y", catStdY)
+        dataMap.putInt("cat_std_z", catStdZ)
+        
+        dataMap.putLong("timestamp", System.currentTimeMillis())
+
+        // Add to buffer
+        transmissionBuffer.add(dataMap)
+        while (transmissionBuffer.size > MAX_BUFFER_SIZE) {
+            transmissionBuffer.removeFirst()
+        }
+
+        // Send the entire buffer
         val putDataMapReq = PutDataMapRequest.create("/sensor_data")
-        putDataMapReq.dataMap.putFloat("mean_x", meanX)
-        putDataMapReq.dataMap.putFloat("mean_y", meanY)
-        putDataMapReq.dataMap.putFloat("mean_z", meanZ)
-        putDataMapReq.dataMap.putFloat("min_x", minX)
-        putDataMapReq.dataMap.putFloat("min_y", minY)
-        putDataMapReq.dataMap.putFloat("min_z", minZ)
-        putDataMapReq.dataMap.putFloat("max_x", maxX)
-        putDataMapReq.dataMap.putFloat("max_y", maxY)
-        putDataMapReq.dataMap.putFloat("max_z", maxZ)
-        putDataMapReq.dataMap.putFloat("std_x", stdX)
-        putDataMapReq.dataMap.putFloat("std_y", stdY)
-        putDataMapReq.dataMap.putFloat("std_z", stdZ)
-        
-        // Send categories
-        putDataMapReq.dataMap.putInt("cat_mean_x", catMeanX)
-        putDataMapReq.dataMap.putInt("cat_mean_y", catMeanY)
-        putDataMapReq.dataMap.putInt("cat_mean_z", catMeanZ)
-        putDataMapReq.dataMap.putInt("cat_min_x", catMinX)
-        putDataMapReq.dataMap.putInt("cat_min_y", catMinY)
-        putDataMapReq.dataMap.putInt("cat_min_z", catMinZ)
-        putDataMapReq.dataMap.putInt("cat_max_x", catMaxX)
-        putDataMapReq.dataMap.putInt("cat_max_y", catMaxY)
-        putDataMapReq.dataMap.putInt("cat_max_z", catMaxZ)
-        putDataMapReq.dataMap.putInt("cat_std_x", catStdX)
-        putDataMapReq.dataMap.putInt("cat_std_y", catStdY)
-        putDataMapReq.dataMap.putInt("cat_std_z", catStdZ)
-        
-        putDataMapReq.dataMap.putLong("timestamp", System.currentTimeMillis())
+        putDataMapReq.dataMap.putDataMapArrayList("buffered_data", ArrayList(transmissionBuffer))
+        putDataMapReq.dataMap.putLong("timestamp", System.currentTimeMillis()) // Update timestamp to trigger change
         
         val putDataReq = putDataMapReq.asPutDataRequest()
         putDataReq.setUrgent()
@@ -253,6 +262,12 @@ class SensorService : Service(), SensorEventListener {
         sensorManager.unregisterListener(this)
         serviceJob.cancel()
         
+        wakeLock?.let {
+            if (it.isHeld) {
+                it.release()
+            }
+        }
+        
         closeFiles()
         sendFilesToPhone()
     }
@@ -316,6 +331,31 @@ class SensorService : Service(), SensorEventListener {
         channelClient.sendFile(channel, android.net.Uri.fromFile(file)).await()
         channelClient.close(channel)
         Log.d("SensorService", "Sent file: ${file.name} to $nodeId")
+    }
+
+    companion object {
+        var userHeight: Double = 170.0 // Default 170 cm in meters
+        var userWeight: Double = 60.0 // Default 60 kg
+
+        fun updateUserMetrics(context: Context, height: Double?, weight: Double?) {
+            val prefs = com.vicm.sensorlogger.data.UserPreferences(context)
+            if (height != null) {
+                userHeight = height
+                prefs.saveHeight(height)
+            }
+            if (weight != null) {
+                userWeight = weight
+                prefs.saveWeight(weight)
+            }
+            Log.d("SensorService", "Updated user metrics: Height=$userHeight, Weight=$userWeight")
+        }
+        
+        fun loadUserMetrics(context: Context) {
+            val prefs = com.vicm.sensorlogger.data.UserPreferences(context)
+            userHeight = prefs.getHeight()
+            userWeight = prefs.getWeight()
+            Log.d("SensorService", "Loaded user metrics: Height=$userHeight, Weight=$userWeight")
+        }
     }
 
     override fun onBind(intent: Intent?): IBinder? {

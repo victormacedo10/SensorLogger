@@ -1,159 +1,250 @@
 package com.vicm.sensorlogger.presentation
 
-import androidx.compose.foundation.layout.*
-import androidx.compose.runtime.*
+import android.widget.Toast
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.wear.compose.material.*
-import com.vicm.sensorlogger.SettingsManager
+import androidx.wear.compose.material.Button
+import androidx.wear.compose.material.ButtonDefaults
+import androidx.wear.compose.material.MaterialTheme
+import androidx.wear.compose.material.Text
+import com.vicm.sensorlogger.SensorService
 
 @Composable
-fun SettingsScreen(onBack: () -> Unit) {
+fun SettingsScreen(
+    onBack: () -> Unit
+) {
     val context = LocalContext.current
-    var height by remember { mutableStateOf(SettingsManager.getHeight(context)) }
-    var weight by remember { mutableStateOf(SettingsManager.getWeight(context)) }
-    
-    var editingMode by remember { mutableStateOf<EditingMode?>(null) }
 
-    if (editingMode != null) {
-        val isHeight = editingMode == EditingMode.HEIGHT
-        val initialVal = if (isHeight) height else weight
-        
-        NumberPadScreen(
-            initialValue = if (initialVal == 1.0f) "" else initialVal.toString(),
-            title = if (isHeight) "Height (cm)" else "Weight (kg)",
-            onResult = { result ->
-                val floatVal = result.toFloatOrNull() ?: 1.0f
-                if (isHeight) {
-                    height = floatVal
-                    SettingsManager.saveHeight(context, floatVal)
-                } else {
-                    weight = floatVal
-                    SettingsManager.saveWeight(context, floatVal)
-                }
-                editingMode = null
+    // State for height and weight as Strings for input
+    // Height is stored in meters in SensorService, displayed in cm
+    var heightText by remember { mutableStateOf(String.format("%.1f", SensorService.userHeight)) }
+    var weightText by remember { mutableStateOf(String.format("%.1f", SensorService.userWeight)) }
+
+    var editingHeight by remember { mutableStateOf(false) }
+    var editingWeight by remember { mutableStateOf(false) }
+
+    if (editingHeight) {
+        NumberPad(
+            initialValue = heightText,
+            onResult = {
+                heightText = it
+                editingHeight = false
             },
-            onCancel = { editingMode = null }
+            onCancel = { editingHeight = false }
+        )
+    } else if (editingWeight) {
+        NumberPad(
+            initialValue = weightText,
+            onResult = {
+                weightText = it
+                editingWeight = false
+            },
+            onCancel = { editingWeight = false }
         )
     } else {
         Column(
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 18.dp),
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Text("Settings", style = MaterialTheme.typography.title2)
-            Spacer(modifier = Modifier.height(10.dp))
-            
+            // Height label and input
+            Text(
+                text = "Height (cm)",
+                style = MaterialTheme.typography.body2,
+                textAlign = TextAlign.Center,
+                color = MaterialTheme.colors.onBackground,
+                modifier = Modifier.padding(top = 16.dp)
+            )
+
+            Text(
+                text = heightText,
+                style = MaterialTheme.typography.title2,
+                textAlign = TextAlign.Center,
+                color = MaterialTheme.colors.primary,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { editingHeight = true }
+                    .padding(vertical = 4.dp)
+            )
+
+            // Weight label and input
+            Text(
+                text = "Weight (kg)",
+                style = MaterialTheme.typography.body2,
+                textAlign = TextAlign.Center,
+                color = MaterialTheme.colors.onBackground,
+                modifier = Modifier.padding(top = 4.dp)
+            )
+
+            Text(
+                text = weightText,
+                style = MaterialTheme.typography.title2,
+                textAlign = TextAlign.Center,
+                color = MaterialTheme.colors.primary,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { editingWeight = true }
+                    .padding(vertical = 4.dp)
+            )
+
             Button(
-                onClick = { editingMode = EditingMode.HEIGHT },
-                modifier = Modifier.fillMaxWidth(0.9f),
-                colors = ButtonDefaults.secondaryButtonColors()
+                onClick = {
+                    val h = heightText.toDoubleOrNull()
+                    val w = weightText.toDoubleOrNull()
+
+                    if (h != null && w != null) {
+                        SensorService.updateUserMetrics(context, h, w)
+                        Toast.makeText(context, "Saved", Toast.LENGTH_SHORT).show()
+                        onBack()
+                    } else {
+                        Toast.makeText(context, "Invalid input", Toast.LENGTH_SHORT).show()
+                    }
+                },
+                colors = ButtonDefaults.primaryButtonColors(),
+                modifier = Modifier
+                    .fillMaxWidth(0.6f)
+                    .padding(top = 8.dp, bottom = 16.dp)
             ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("Height", style = MaterialTheme.typography.caption2)
-                    Text("$height cm", style = MaterialTheme.typography.body1)
-                }
-            }
-            
-            Spacer(modifier = Modifier.height(8.dp))
-            
-            Button(
-                onClick = { editingMode = EditingMode.WEIGHT },
-                modifier = Modifier.fillMaxWidth(0.9f),
-                colors = ButtonDefaults.secondaryButtonColors()
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("Weight", style = MaterialTheme.typography.caption2)
-                    Text("$weight kg", style = MaterialTheme.typography.body1)
-                }
-            }
-            
-            Spacer(modifier = Modifier.height(10.dp))
-            
-            CompactButton(
-                onClick = onBack,
-                colors = ButtonDefaults.primaryButtonColors()
-            ) {
-                Text("Done")
+                Text("Save")
             }
         }
     }
 }
 
-enum class EditingMode { HEIGHT, WEIGHT }
-
 @Composable
-fun NumberPadScreen(
+fun NumberPad(
     initialValue: String,
-    title: String,
     onResult: (String) -> Unit,
     onCancel: () -> Unit
 ) {
-    var text by remember { mutableStateOf(initialValue) }
-    
-    Column(
-        modifier = Modifier.fillMaxSize().padding(2.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
-    ) {
-        Text(title, style = MaterialTheme.typography.caption2)
-        Text(
-            text = text.ifEmpty { "0" },
-            style = MaterialTheme.typography.body1,
-            modifier = Modifier.padding(vertical = 2.dp)
-        )
-        
-        val buttonSize = 34.dp
-        val fontSize = 14.sp
+    var value by remember { mutableStateOf(initialValue) }
 
-        // Keypad rows
-        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            KeypadButton("1", buttonSize, fontSize) { text += "1" }
-            KeypadButton("2", buttonSize, fontSize) { text += "2" }
-            KeypadButton("3", buttonSize, fontSize) { text += "3" }
-        }
-        Spacer(modifier = Modifier.height(4.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            KeypadButton("4", buttonSize, fontSize) { text += "4" }
-            KeypadButton("5", buttonSize, fontSize) { text += "5" }
-            KeypadButton("6", buttonSize, fontSize) { text += "6" }
-        }
-        Spacer(modifier = Modifier.height(4.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            KeypadButton("7", buttonSize, fontSize) { text += "7" }
-            KeypadButton("8", buttonSize, fontSize) { text += "8" }
-            KeypadButton("9", buttonSize, fontSize) { text += "9" }
-        }
-        Spacer(modifier = Modifier.height(4.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            KeypadButton(".", buttonSize, fontSize) { if (!text.contains(".")) text += "." }
-            KeypadButton("0", buttonSize, fontSize) { text += "0" }
-            KeypadButton("Del", buttonSize, 10.sp) { if (text.isNotEmpty()) text = text.dropLast(1) }
-        }
-        
-        Spacer(modifier = Modifier.height(8.dp))
-        
-        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            CompactButton(onClick = onCancel, colors = ButtonDefaults.secondaryButtonColors()) {
-                Text("X")
+    Row(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colors.background),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // Number Grid Section
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text(
+                text = value,
+                style = MaterialTheme.typography.title2,
+                color = MaterialTheme.colors.primary,
+                modifier = Modifier.padding(bottom = 6.dp)
+            )
+
+            Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                NumButton("1") { value = appendNum(value, "1") }
+                NumButton("2") { value = appendNum(value, "2") }
+                NumButton("3") { value = appendNum(value, "3") }
             }
-            CompactButton(onClick = { onResult(text) }, colors = ButtonDefaults.primaryButtonColors()) {
-                Text("OK")
+            Spacer(modifier = Modifier.height(2.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                NumButton("4") { value = appendNum(value, "4") }
+                NumButton("5") { value = appendNum(value, "5") }
+                NumButton("6") { value = appendNum(value, "6") }
+            }
+            Spacer(modifier = Modifier.height(2.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                NumButton("7") { value = appendNum(value, "7") }
+                NumButton("8") { value = appendNum(value, "8") }
+                NumButton("9") { value = appendNum(value, "9") }
+            }
+            Spacer(modifier = Modifier.height(2.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                NumButton(".") { 
+                    if (!value.contains(".")) {
+                        value += "."
+                    }
+                }
+                NumButton("0") { value = appendNum(value, "0") }
+                NumButton("⌫", isAction = true) { 
+                    if (value.isNotEmpty()) {
+                        value = value.dropLast(1)
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.width(6.dp))
+
+        // Actions Column
+        Column(
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Button(
+                onClick = onCancel,
+                colors = ButtonDefaults.secondaryButtonColors(),
+                modifier = Modifier.size(38.dp)
+            ) {
+                Text("✕")
+            }
+            Button(
+                onClick = { onResult(value) },
+                colors = ButtonDefaults.primaryButtonColors(),
+                modifier = Modifier.size(38.dp)
+            ) {
+                Text("✓")
             }
         }
     }
 }
 
 @Composable
-fun KeypadButton(text: String, size: androidx.compose.ui.unit.Dp, fontSize: androidx.compose.ui.unit.TextUnit, onClick: () -> Unit) {
-    Button(
-        onClick = onClick,
-        modifier = Modifier.size(size),
-        colors = ButtonDefaults.secondaryButtonColors()
+fun NumButton(text: String, isAction: Boolean = false, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .size(32.dp)
+            .clip(CircleShape)
+            .background(if (isAction) MaterialTheme.colors.surface else MaterialTheme.colors.surface)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
     ) {
-        Text(text, fontSize = fontSize, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+        Text(
+            text = text,
+            style = MaterialTheme.typography.body1,
+            color = if (isAction) MaterialTheme.colors.error else MaterialTheme.colors.onSurface
+        )
     }
+}
+
+fun appendNum(current: String, num: String): String {
+    if (current == "0" && num != ".") return num
+    return current + num
 }
