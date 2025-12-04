@@ -46,23 +46,63 @@ import kotlinx.coroutines.launch
 class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
 
     private var isRunning by mutableStateOf(false)
+    private var isProcessingFile by mutableStateOf(false)
+    private var processingError by mutableStateOf<String?>(null)
+
+    private val simulationReceiver = object : android.content.BroadcastReceiver() {
+        override fun onReceive(context: android.content.Context?, intent: Intent?) {
+            when (intent?.action) {
+                com.vicm.sensorlogger.FileSimulationService.ACTION_SIMULATION_STARTED -> {
+                    isProcessingFile = true
+                    processingError = null
+                }
+                com.vicm.sensorlogger.FileSimulationService.ACTION_SIMULATION_ENDED -> {
+                    isProcessingFile = false
+                    val error = intent.getStringExtra(com.vicm.sensorlogger.FileSimulationService.EXTRA_ERROR)
+                    if (error != null) {
+                        processingError = error
+                    }
+                }
+            }
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
         // Load user metrics on startup
         SensorService.loadUserMetrics(this)
+
+        val filter = android.content.IntentFilter().apply {
+            addAction(com.vicm.sensorlogger.FileSimulationService.ACTION_SIMULATION_STARTED)
+            addAction(com.vicm.sensorlogger.FileSimulationService.ACTION_SIMULATION_ENDED)
+        }
+        registerReceiver(simulationReceiver, filter, RECEIVER_NOT_EXPORTED)
         
         setContent {
-            WearApp(isRunning) {
-                toggleService()
-            }
+            WearApp(
+                isRunning = isRunning,
+                isProcessingFile = isProcessingFile,
+                processingError = processingError,
+                onToggleService = { toggleService() },
+                onOpenFile = { startFileSimulation() },
+                onErrorDismiss = { processingError = null }
+            )
         }
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        unregisterReceiver(simulationReceiver)
     }
 
     override fun onResume() {
         super.onResume()
         Wearable.getDataClient(this).addListener(this)
+        
+        // Sync state with service
+        isProcessingFile = com.vicm.sensorlogger.FileSimulationService.isServiceRunning
+        
         updateScreenOn()
     }
 
@@ -72,7 +112,7 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
     }
 
     private fun updateScreenOn() {
-        if (isRunning) {
+        if (isRunning || isProcessingFile) {
             window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         } else {
             window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -93,20 +133,39 @@ class MainActivity : ComponentActivity(), DataClient.OnDataChangedListener {
     }
 
     private fun toggleService() {
+        if (isProcessingFile) return // Prevent if simulation is running
         val intent = Intent(this, SensorService::class.java)
         if (isRunning) {
             stopService(intent)
         } else {
             startForegroundService(intent)
         }
+        // isRunning will be updated via DataLayer callback or we can optimistically toggle it
+        // But SensorService updates it via DataLayer, so we wait for that. 
+        // However, for immediate UI feedback, we might want to toggle. 
+        // The original code toggled it manually: isRunning = !isRunning
+        // We'll keep that.
         isRunning = !isRunning 
+    }
+
+    private fun startFileSimulation() {
+        if (isRunning) return // Prevent if collection is running
+        if (isProcessingFile) return
+        
+        isProcessingFile = true
+        val intent = Intent(this, com.vicm.sensorlogger.FileSimulationService::class.java)
+        startService(intent)
     }
 }
 
 @Composable
 fun WearApp(
     isRunning: Boolean, 
-    onToggle: () -> Unit
+    isProcessingFile: Boolean,
+    processingError: String?,
+    onToggleService: () -> Unit,
+    onOpenFile: () -> Unit,
+    onErrorDismiss: () -> Unit
 ) {
     var showSettings by remember { mutableStateOf(false) }
 
@@ -126,8 +185,21 @@ fun WearApp(
             } else {
                 MainScreen(
                     isRunning = isRunning, 
-                    onToggle = onToggle,
+                    isProcessingFile = isProcessingFile,
+                    onToggle = onToggleService,
+                    onOpenFile = onOpenFile,
                     onSettingsClick = { showSettings = true }
+                )
+            }
+
+            if (processingError != null) {
+                androidx.wear.compose.material.dialog.Alert(
+                    title = { Text("Error") },
+                    content = { Text(processingError) },
+                    negativeButton = {},
+                    positiveButton = { 
+                        Button(onClick = onErrorDismiss) { Text("OK") } 
+                    }
                 )
             }
         }
@@ -137,7 +209,9 @@ fun WearApp(
 @Composable
 fun MainScreen(
     isRunning: Boolean, 
+    isProcessingFile: Boolean,
     onToggle: () -> Unit,
+    onOpenFile: () -> Unit,
     onSettingsClick: () -> Unit
 ) {
     Column(
@@ -148,7 +222,8 @@ fun MainScreen(
         Button(
             onClick = onSettingsClick,
             colors = ButtonDefaults.secondaryButtonColors(),
-            modifier = Modifier.size(ButtonDefaults.SmallButtonSize)
+            modifier = Modifier.size(ButtonDefaults.SmallButtonSize),
+            enabled = !isRunning && !isProcessingFile
         ) {
             Icon(
                 imageVector = Icons.Default.Settings,
@@ -164,15 +239,31 @@ fun MainScreen(
             colors = ButtonDefaults.primaryButtonColors(
                 backgroundColor = if (isRunning) MaterialTheme.colors.error else MaterialTheme.colors.primary,
                 contentColor = MaterialTheme.colors.onPrimary
-            )
+            ),
+            enabled = !isProcessingFile
         ) {
             Text(text = if (isRunning) "Stop" else "Start")
         }
 
         Spacer(modifier = Modifier.height(8.dp))
 
+        Button(
+            onClick = onOpenFile,
+            modifier = Modifier.fillMaxWidth(0.75f),
+            colors = ButtonDefaults.secondaryButtonColors(),
+            enabled = !isRunning && !isProcessingFile
+        ) {
+            Text(text = if (isProcessingFile) "Running..." else "Open File")
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
         Text(
-            text = if (isRunning) "Collecting..." else "Ready",
+            text = when {
+                isRunning -> "Collecting..."
+                isProcessingFile -> "Processing..."
+                else -> "Ready"
+            },
             textAlign = TextAlign.Center,
             color = MaterialTheme.colors.onBackground,
             style = MaterialTheme.typography.body1

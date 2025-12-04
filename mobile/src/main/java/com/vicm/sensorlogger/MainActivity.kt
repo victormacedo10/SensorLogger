@@ -457,6 +457,9 @@ class MainActivity : AppCompatActivity(), DataClient.OnDataChangedListener {
         
         Wearable.getChannelClient(this).receiveFile(channel, android.net.Uri.fromFile(file), false)
             .addOnSuccessListener {
+                if (fileName.endsWith("_metrics.csv")) {
+                    processMetricsFile(file)
+                }
                 runOnUiThread {
                     showFileSavedAlert(fileName)
                 }
@@ -464,6 +467,128 @@ class MainActivity : AppCompatActivity(), DataClient.OnDataChangedListener {
             .addOnFailureListener { e ->
                 Log.e("MainActivity", "Failed to receive file", e)
             }
+    }
+
+    private fun processMetricsFile(file: File) {
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val lines = file.readLines()
+                if (lines.size <= 1) return@launch // Empty or header only
+
+                val localEntries = mutableMapOf<ScatterChart, ArrayList<Pair<Entry, Int>>>()
+                var localTimeIndex = 0f
+                
+                // Skip header
+                val dataLines = lines.drop(1)
+                
+                // Parse all lines
+                for (line in dataLines) {
+                    val parts = line.split(",")
+                    if (parts.size >= 13) {
+                        // Format: timestamp,mean_x,mean_y,mean_z,min_x,min_y,min_z,max_x,max_y,max_z,std_x,std_y,std_z
+                        val xMean = parts[1].toFloat()
+                        val yMean = parts[2].toFloat()
+                        val zMean = parts[3].toFloat()
+                        val xMin = parts[4].toFloat()
+                        val yMin = parts[5].toFloat()
+                        val zMin = parts[6].toFloat()
+                        val xMax = parts[7].toFloat()
+                        val yMax = parts[8].toFloat()
+                        val zMax = parts[9].toFloat()
+                        val xStd = parts[10].toFloat()
+                        val yStd = parts[11].toFloat()
+                        val zStd = parts[12].toFloat()
+                        
+                        val catXMean = getValueCategory(xMean)
+                        val catYMean = getValueCategory(yMean)
+                        val catZMean = getValueCategory(zMean)
+                        val catXMin = getValueCategory(xMin)
+                        val catYMin = getValueCategory(yMin)
+                        val catZMin = getValueCategory(zMin)
+                        val catXMax = getValueCategory(xMax)
+                        val catYMax = getValueCategory(yMax)
+                        val catZMax = getValueCategory(zMax)
+                        val catXStd = getValueCategory(xStd)
+                        val catYStd = getValueCategory(yStd)
+                        val catZStd = getValueCategory(zStd)
+                        
+                        addEntryToLocalMap(localEntries, chartXMean, xMean, catXMean, localTimeIndex)
+                        addEntryToLocalMap(localEntries, chartXMin, xMin, catXMin, localTimeIndex)
+                        addEntryToLocalMap(localEntries, chartXMax, xMax, catXMax, localTimeIndex)
+                        addEntryToLocalMap(localEntries, chartXStd, xStd, catXStd, localTimeIndex)
+                        
+                        addEntryToLocalMap(localEntries, chartYMean, yMean, catYMean, localTimeIndex)
+                        addEntryToLocalMap(localEntries, chartYMin, yMin, catYMin, localTimeIndex)
+                        addEntryToLocalMap(localEntries, chartYMax, yMax, catYMax, localTimeIndex)
+                        addEntryToLocalMap(localEntries, chartYStd, yStd, catYStd, localTimeIndex)
+                        
+                        addEntryToLocalMap(localEntries, chartZMean, zMean, catZMean, localTimeIndex)
+                        addEntryToLocalMap(localEntries, chartZMin, zMin, catZMin, localTimeIndex)
+                        addEntryToLocalMap(localEntries, chartZMax, zMax, catZMax, localTimeIndex)
+                        addEntryToLocalMap(localEntries, chartZStd, zStd, catZStd, localTimeIndex)
+                        
+                        localTimeIndex += 1f
+                    }
+                }
+                
+                // Now update all charts on UI thread
+                runOnUiThread {
+                    resetCharts()
+                    chartEntries.putAll(localEntries)
+                    timeIndex = localTimeIndex
+                    refreshAllCharts()
+                    fitAllCharts()
+                    showSessionMeans()
+                }
+                
+            } catch (e: Exception) {
+                Log.e("MainActivity", "Error processing metrics file", e)
+            }
+        }
+    }
+
+    private fun addEntryToLocalMap(
+        map: MutableMap<ScatterChart, ArrayList<Pair<Entry, Int>>>, 
+        chart: ScatterChart, 
+        value: Float, 
+        category: Int,
+        timeIdx: Float
+    ) {
+        val entries = map.getOrPut(chart) { ArrayList() }
+        entries.add(Pair(Entry(timeIdx, value), category))
+    }
+
+    private fun refreshAllCharts() {
+        val charts = listOf(
+            chartXMean, chartXMin, chartXMax, chartXStd,
+            chartYMean, chartYMin, chartYMax, chartYStd,
+            chartZMean, chartZMin, chartZMax, chartZStd
+        )
+        
+        for (chart in charts) {
+            val entries = chartEntries[chart] ?: continue
+            
+            val lowEntries = ArrayList<Entry>()
+            val midEntries = ArrayList<Entry>()
+            val highEntries = ArrayList<Entry>()
+            
+            for ((entry, cat) in entries) {
+                when (cat) {
+                    0 -> lowEntries.add(entry)
+                    2 -> highEntries.add(entry)
+                    else -> midEntries.add(entry)
+                }
+            }
+            
+            val dataSetLow = createDataSet(lowEntries, "Low", colorLow)
+            val dataSetMid = createDataSet(midEntries, "Mid", colorMid)
+            val dataSetHigh = createDataSet(highEntries, "High", colorHigh)
+            
+            val scatterData = ScatterData(dataSetLow, dataSetMid, dataSetHigh)
+            chart.data = scatterData
+            chart.notifyDataSetChanged()
+            chart.invalidate()
+        }
     }
 
     private fun showFileSavedAlert(fileName: String) {

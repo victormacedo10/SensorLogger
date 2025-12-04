@@ -130,23 +130,23 @@ class SensorService : Service(), SensorEventListener {
         val maxY = yCopy.maxOrNull() ?: 0f
         val maxZ = zCopy.maxOrNull() ?: 0f
         
-        val stdX = calculateStd(xCopy, meanX)
-        val stdY = calculateStd(yCopy, meanY)
-        val stdZ = calculateStd(zCopy, meanZ)
+        val stdX = SensorUtils.calculateStd(xCopy, meanX)
+        val stdY = SensorUtils.calculateStd(yCopy, meanY)
+        val stdZ = SensorUtils.calculateStd(zCopy, meanZ)
 
         // Compute categories for each metric (0: LOW < -4, 1: MID, 2: HIGH > 4)
-        val catMeanX = getCategory(meanX)
-        val catMeanY = getCategory(meanY)
-        val catMeanZ = getCategory(meanZ)
-        val catMinX = getCategory(minX)
-        val catMinY = getCategory(minY)
-        val catMinZ = getCategory(minZ)
-        val catMaxX = getCategory(maxX)
-        val catMaxY = getCategory(maxY)
-        val catMaxZ = getCategory(maxZ)
-        val catStdX = getCategory(stdX)
-        val catStdY = getCategory(stdY)
-        val catStdZ = getCategory(stdZ)
+        val catMeanX = SensorUtils.getCategory(meanX)
+        val catMeanY = SensorUtils.getCategory(meanY)
+        val catMeanZ = SensorUtils.getCategory(meanZ)
+        val catMinX = SensorUtils.getCategory(minX)
+        val catMinY = SensorUtils.getCategory(minY)
+        val catMinZ = SensorUtils.getCategory(minZ)
+        val catMaxX = SensorUtils.getCategory(maxX)
+        val catMaxY = SensorUtils.getCategory(maxY)
+        val catMaxZ = SensorUtils.getCategory(maxZ)
+        val catStdX = SensorUtils.getCategory(stdX)
+        val catStdY = SensorUtils.getCategory(stdY)
+        val catStdZ = SensorUtils.getCategory(stdZ)
 
         Log.d("SensorService", "Sending data - X: mean=$meanX, min=$minX, max=$maxX, std=$stdX")
 
@@ -214,19 +214,7 @@ class SensorService : Service(), SensorEventListener {
         }
     }
     
-    private fun getCategory(value: Float): Int {
-        return when {
-            value < -4f -> 0  // LOW
-            value > 4f -> 2   // HIGH
-            else -> 1         // MID
-        }
-    }
-    
-    private fun calculateStd(values: List<Float>, mean: Float): Float {
-        if (values.isEmpty()) return 0f
-        val variance = values.map { (it - mean) * (it - mean) }.average()
-        return kotlin.math.sqrt(variance).toFloat()
-    }
+
 
     private fun publishState(collecting: Boolean) {
         val putDataMapReq = PutDataMapRequest.create("/collection_state")
